@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>. (dot) vibes</title>
+<script src="firebase-config.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#09090b;color:#fff;font-family:Arial,sans-serif}
+header{padding:18px 24px;border-bottom:1px solid #29292f;display:flex;justify-content:space-between}
+.logo{font-size:25px;font-weight:800}.logo b{color:#a78bfa}.status{color:#a78bfa}
+main{max-width:1000px;margin:auto;padding:28px}.hero h1{font-size:44px;margin-bottom:8px}
+.muted{color:#999}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.card{background:#15151b;border:1px solid #292932;border-radius:18px;padding:20px;margin-bottom:16px}
+button{border:0;border-radius:11px;padding:11px 16px;background:#8b5cf6;color:white;font-weight:700;cursor:pointer}
+button.secondary{background:#292932}nav{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}
+.page{display:none}.page.active{display:block}input{width:100%;padding:13px;margin:8px 0 12px;background:#0e0e12;color:white;border:1px solid #333;border-radius:10px}
+.chat{height:260px;overflow:auto;background:#0d0d11;padding:12px;border-radius:12px;border:1px solid #292932}
+.msg{background:#1b1b23;padding:9px;border-radius:9px;margin:7px 0}.error{display:none;background:#4a1717;padding:12px;border-radius:10px;margin:15px 0}
+footer{text-align:center;color:#777;padding:40px}
+</style>
+</head>
+<body>
+<header><div class="logo"><b>.</b> vibes</div><div id="status" class="status">Connecting...</div></header>
+<main>
+<div class="hero"><h1>Welcome to . vibes</h1><p class="muted">Connect, chat and share your vibe.</p><div id="error" class="error"></div></div>
+<nav>
+<button onclick="page('home')">Home</button><button class="secondary" onclick="page('rooms')">Vibe Rooms</button><button class="secondary" onclick="page('chat')">Chat</button><button class="secondary" onclick="page('profile')">Profile</button>
+</nav>
+
+<section id="home" class="page active"><div class="grid">
+<div class="card"><h2>🎙 Vibe Rooms</h2><p class="muted">Create community rooms.</p><button onclick="page('rooms')">Open Rooms</button></div>
+<div class="card"><h2>💬 Chat</h2><p class="muted">Send Firebase real-time messages.</p><button onclick="page('chat')">Open Chat</button></div>
+<div class="card"><h2>👤 Profile</h2><p class="muted">Your Firebase account.</p><button onclick="page('profile')">Profile</button></div>
+</div></section>
+
+<section id="rooms" class="page">
+<div class="card"><h2>Create Room</h2><input id="roomName" placeholder="Room name"><button onclick="createRoom()">Create Room</button></div>
+<div class="card"><h2>Rooms</h2><div id="roomsList" class="grid"><p class="muted">Loading...</p></div></div>
+</section>
+
+<section id="chat" class="page">
+<div class="card"><h2>Community Chat</h2><div id="chatBox" class="chat"></div>
+<input id="message" placeholder="Write a message..." onkeydown="if(event.key==='Enter')sendMessage()"><button onclick="sendMessage()">Send</button></div>
+</section>
+
+<section id="profile" class="page"><div class="card"><h2>Profile</h2><p class="muted">Firebase User ID</p><code id="uid">Connecting...</code></div></section>
+<footer>. (dot) vibes</footer>
+</main>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
+import {getFirestore,collection,addDoc,onSnapshot,query,orderBy,limit,serverTimestamp} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+
+const cfg=window.DOT_VIBES_FIREBASE_CONFIG||{};
+const err=document.getElementById("error");
+function error(x){err.textContent=x;err.style.display="block";}
+if(!cfg.apiKey||cfg.apiKey.startsWith("YOUR_")) error("Firebase is not configured. Edit firebase-config.js with your Firebase Web App settings.");
+else try{
+ const app=initializeApp(cfg),auth=getAuth(app),db=getFirestore(app);
+ window.auth=auth;window.db=db;
+ signInAnonymously(auth).catch(e=>error("Anonymous login failed: "+e.message));
+ onAuthStateChanged(auth,u=>{if(u){document.getElementById("status").textContent="● Connected";document.getElementById("uid").textContent=u.uid;loadRooms();loadChat();}});
+}catch(e){error("Firebase error: "+e.message)}
+
+window.page=id=>{document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));document.getElementById(id).classList.add("active")};
+
+window.createRoom=async()=>{
+ if(!window.db||!window.auth.currentUser)return;
+ const name=document.getElementById("roomName").value.trim();if(!name)return alert("Enter a room name.");
+ try{await addDoc(collection(db,"rooms"),{name,hostId:auth.currentUser.uid,status:"live",createdAt:serverTimestamp()});document.getElementById("roomName").value="";}catch(e){error(e.message)}
+};
+
+function loadRooms(){
+ const q=query(collection(db,"rooms"),orderBy("createdAt","desc"),limit(20));
+ onSnapshot(q,s=>{const el=document.getElementById("roomsList");el.innerHTML="";
+ if(s.empty){el.innerHTML='<p class="muted">No rooms yet.</p>';return}
+ s.forEach(d=>{const r=d.data(),c=document.createElement("div");c.className="card";c.innerHTML="<h3>🎙 "+safe(r.name)+"</h3><p class='muted'>"+safe(r.status||"live")+"</p><button onclick="page('chat')">Join Chat</button>";el.appendChild(c)})},e=>error(e.message))
+}
+window.sendMessage=async()=>{
+ const i=document.getElementById("message"),t=i.value.trim();if(!t||!window.auth?.currentUser)return;
+ try{await addDoc(collection(db,"messages"),{text:t,uid:auth.currentUser.uid,createdAt:serverTimestamp()});i.value=""}catch(e){error(e.message)}
+};
+function loadChat(){
+ const q=query(collection(db,"messages"),orderBy("createdAt","asc"),limit(100));
+ onSnapshot(q,s=>{const b=document.getElementById("chatBox");b.innerHTML="";s.forEach(d=>{const m=d.data(),x=document.createElement("div");x.className="msg";x.textContent=m.text||"";b.appendChild(x)});b.scrollTop=b.scrollHeight},e=>error(e.message))
+}
+function safe(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+</script>
+</body>
+</html>
